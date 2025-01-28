@@ -10,6 +10,27 @@ const pool = new Pool({
   port: 5432,
 });
 
+// Create the products table if it doesn't exist
+const createTable = async () => {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS products (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(100),
+      price DECIMAL(10, 2)
+    );
+  `;
+
+  try {
+    await pool.query(createTableQuery);
+    console.log('Products table is ready.');
+  } catch (err) {
+    console.error('Error creating products table:', err);
+  }
+};
+
+// Call the function to create the table
+createTable();
+
 app.use(express.json());
 
 app.post('/products', async (req, res) => {

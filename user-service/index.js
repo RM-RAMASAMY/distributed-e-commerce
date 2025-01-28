@@ -5,14 +5,6 @@ const { Pool } = require('pg');
 const app = express();
 app.use(bodyParser.json());
 
-// const pool = new Pool({
-//   user: 'admin',
-//   host: 'localhost',
-//   database: 'ecommerce',
-//   password: 'admin',
-//   port: 5432,
-// });
-
 const pool = new Pool({
     user: 'admin',          // Matches POSTGRES_USER
     host: 'postgres',       // Use the service name from docker-compose.yaml

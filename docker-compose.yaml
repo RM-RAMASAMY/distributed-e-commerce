@@ -48,3 +48,10 @@ services:
       - "3001:3001"
     depends_on:
       - postgres
+
+  product-service:
+    build: ./product-service
+    ports:
+      - "3002:3002"
+    depends_on:
+      - postgres
