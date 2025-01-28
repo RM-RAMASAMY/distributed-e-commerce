@@ -1,1 +1,1 @@
-# distributed-e-commerce
+# distributed-e-commerce (in progress)
