@@ -13,20 +13,21 @@ const pool = new Pool({
     port: 5432,             // Default PostgreSQL port
   });
   
-  const createTableQuery = `
-  CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(100),
-      email VARCHAR(100)
-  );
+  const checkTableQuery = `
+SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'users'
+        );
   `;
   
   (async () => {
     try {
-      await pool.query(createTableQuery);
-      console.log('Users table ensured.');
+      const result = await pool.query(checkTableQuery);
+        const tableExists = result.rows[0].exists;
+        console.log(`Users table exists: ${tableExists}`);
     } catch (error) {
-      console.error('Error creating users table:', error);
+        console.error('Error checking users table:', error);
     }
   })();
   

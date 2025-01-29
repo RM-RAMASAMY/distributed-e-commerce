@@ -1,6 +1,7 @@
 const express = require('express');
 const { Pool } = require('pg');
 const app = express();
+app.use(express.json());
 
 const pool = new Pool({
   user: 'admin',
@@ -10,28 +11,25 @@ const pool = new Pool({
   port: 5432,
 });
 
-// Create the products table if it doesn't exist
-const createTable = async () => {
-  const createTableQuery = `
-    CREATE TABLE IF NOT EXISTS products (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(100),
-      price DECIMAL(10, 2)
-    );
+// Check if the products table exist
+
+const checkTableQuery = `
+SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'products'
+        );
   `;
-
-  try {
-    await pool.query(createTableQuery);
-    console.log('Products table is ready.');
-  } catch (err) {
-    console.error('Error creating products table:', err);
-  }
-};
-
-// Call the function to create the table
-createTable();
-
-app.use(express.json());
+  
+  (async () => {
+    try {
+      const result = await pool.query(checkTableQuery);
+        const tableExists = result.rows[0].exists;
+        console.log(`products table exists: ${tableExists}`);
+    } catch (error) {
+        console.error('Error checking users table:', error);
+    }
+  })();
 
 app.post('/products', async (req, res) => {
   const { name, price } = req.body;
@@ -40,7 +38,7 @@ app.post('/products', async (req, res) => {
       'INSERT INTO products (name, price) VALUES ($1, $2) RETURNING *',
       [name, price]
     );
-    res.status(201).json(result.rows[0]);
+    res.status(201).send('Product added');
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Database error' });
