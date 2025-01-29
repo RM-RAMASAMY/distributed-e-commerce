@@ -1,0 +1,71 @@
+@startuml
+title Distributed E-Commerce Order Flow (with Payment Confirmation)
+
+actor User
+participant "API Gateway" as APIGW
+participant "User Service" as UserSvc
+participant "Product Service" as ProdSvc
+participant "Order Service" as OrderSvc
+database "PostgreSQL (Users)" as UserDB
+database "PostgreSQL (Products)" as ProdDB
+database "PostgreSQL (Orders)" as OrderDB
+participant "Redis Cache" as Redis
+participant "Kafka Message Broker" as Kafka
+participant "Inventory Service" as InvSvc
+participant "Payment Service" as PaySvc
+participant "Payment Gateway (Stripe/PayPal)" as PaymentGateway
+participant "Prometheus (Metrics)" as Prometheus
+participant "Grafana (Monitoring)" as Grafana
+participant "Jaeger (Tracing)" as Jaeger
+
+User -> APIGW: Request Product List
+APIGW -> Redis: Check Cache
+Redis -> APIGW: Cache Hit? (Yes/No)
+APIGW -> ProdSvc: Fetch Products (if not in cache)
+ProdSvc -> ProdDB: Query Products
+ProdDB -> ProdSvc: Return Product Data
+ProdSvc -> Redis: Store Product Data in Cache
+ProdSvc -> APIGW: Return Product List
+APIGW -> User: Display Products
+
+User -> APIGW: Place Order
+APIGW -> OrderSvc: Create New Order
+OrderSvc -> ProdSvc: Check Product Availability
+ProdSvc -> ProdDB: Verify Stock
+ProdDB -> ProdSvc: Stock OK
+ProdSvc -> OrderSvc: Confirm Availability
+
+OrderSvc -> Kafka: Publish OrderCreated Event
+Kafka -> InvSvc: Notify Inventory Service
+Kafka -> PaySvc: Notify Payment Service
+
+InvSvc -> ProdDB: Deduct Stock
+ProdDB -> InvSvc: Stock Updated
+InvSvc -> Kafka: Publish StockUpdated Event
+Kafka -> OrderSvc: Notify Order Service
+
+PaySvc -> PaymentGateway: Process Payment
+PaymentGateway -> PaySvc: Payment Success/Failure
+
+alt Payment Successful
+    PaySvc -> Kafka: Publish PaymentSuccess Event
+    Kafka -> OrderSvc: Notify Payment Success
+    OrderSvc -> OrderDB: Save Order Details
+    OrderSvc -> Redis: Cache Order Status
+    OrderSvc -> APIGW: Return Order Confirmation
+    APIGW -> User: Order Placed Successfully
+else Payment Failed
+    PaySvc -> Kafka: Publish PaymentFailed Event
+    Kafka -> OrderSvc: Notify Payment Failure
+    OrderSvc -> InvSvc: Restore Stock
+    InvSvc -> ProdDB: Revert Stock Changes
+    OrderSvc -> APIGW: Return Payment Failure Message
+    APIGW -> User: Payment Failed, Try Again
+end
+
+note right of OrderSvc: Observability Metrics
+OrderSvc -> Prometheus: Report API Latency
+Prometheus -> Grafana: Display Metrics Dashboard
+OrderSvc -> Jaeger: Trace Order Request
+Jaeger -> Grafana: Display Tracing Data
+@enduml
