@@ -1,58 +1,116 @@
-const express = require('express');
-const { Pool } = require('pg');
-const app = express();
-app.use(express.json());
+require("dotenv").config();
+const express = require("express");
+const { Pool } = require("pg");
+const redis = require("redis");
+const bodyParser = require("body-parser");
 
+const app = express();
+const port = process.env.PORT || 3002;
+
+// PostgreSQL Connection
 const pool = new Pool({
-  user: 'admin',
-  host: 'postgres',
-  database: 'ecommerce',
-  password: 'admin',
-  port: 5432,
+  user: process.env.DB_USER,
+  host: process.env.DB_HOST,
+  database: process.env.DB_NAME,
+  password: process.env.DB_PASSWORD,
+  port: process.env.DB_PORT,
 });
 
-// Check if the products table exist
+// Redis Connection
+const redisClient = redis.createClient({
+  url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`,
+});
+redisClient.connect().catch(console.error);
 
-const checkTableQuery = `
-SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
-            AND table_name = 'products'
-        );
-  `;
-  
-  (async () => {
-    try {
-      const result = await pool.query(checkTableQuery);
-        const tableExists = result.rows[0].exists;
-        console.log(`products table exists: ${tableExists}`);
-    } catch (error) {
-        console.error('Error checking users table:', error);
-    }
-  })();
+app.use(bodyParser.json());
 
-app.post('/products', async (req, res) => {
-  const { name, price } = req.body;
+// Create Product
+app.post("/products", async (req, res) => {
+  const { name, price, stock } = req.body;
   try {
     const result = await pool.query(
-      'INSERT INTO products (name, price) VALUES ($1, $2) RETURNING *',
-      [name, price]
+      "INSERT INTO products (name, price, stock) VALUES ($1, $2, $3) RETURNING *",
+      [name, price, stock]
     );
-    res.status(201).send('Product added');
+    await redisClient.del("products"); // Clear Cache
+    res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: "Database error" });
   }
 });
 
-app.get('/products', async (req, res) => {
+// Get All Products (with Redis Caching)
+app.get("/products", async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM products');
-    res.status(200).json(result.rows);
+    const cachedProducts = await redisClient.get("products");
+    if (cachedProducts) {
+      return res.json(JSON.parse(cachedProducts));
+    }
+
+    const result = await pool.query("SELECT * FROM products");
+    await redisClient.setEx("products", 3600, JSON.stringify(result.rows));
+    res.json(result.rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: "Database error" });
   }
 });
 
-app.listen(3002, () => console.log('Product service running on port 3002'));
+// Get Product by ID
+app.get("/products/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const cachedProduct = await redisClient.get(`product:${id}`);
+    if (cachedProduct) {
+      return res.json(JSON.parse(cachedProduct));
+    }
+
+    const result = await pool.query("SELECT * FROM products WHERE id = $1", [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: "Product not found" });
+
+    await redisClient.setEx(`product:${id}`, 3600, JSON.stringify(result.rows[0]));
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// Update Product Stock
+app.put("/products/:id", async (req, res) => {
+  const { id } = req.params;
+  const { stock } = req.body;
+  try {
+    const result = await pool.query(
+      "UPDATE products SET stock = $1 WHERE id = $2 RETURNING *",
+      [stock, id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "Product not found" });
+
+    await redisClient.del("products");
+    await redisClient.del(`product:${id}`);
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+// Delete Product
+app.delete("/products/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query("DELETE FROM products WHERE id = $1", [id]);
+    await redisClient.del("products");
+    await redisClient.del(`product:${id}`);
+    res.json({ message: "Product deleted" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Product service running on port ${port}`);
+});
