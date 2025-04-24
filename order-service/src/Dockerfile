@@ -1,6 +1,12 @@
 FROM node:slim
+
 WORKDIR /app
+
 COPY package*.json ./
 RUN npm install
+
 COPY . .
-CMD ["node", "index.js"]
+
+EXPOSE 4000
+
+CMD ["npm", "run", "start"]
