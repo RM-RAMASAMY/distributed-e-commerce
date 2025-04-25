@@ -13,6 +13,7 @@ services:
       - "5432:5432"
     volumes:
       - ./init:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql/data
 
   redis:
     image: redis:7
@@ -61,15 +62,19 @@ services:
   order-service:
     build:
       context: ./order-service
+      dockerfile: src/Dockerfile
     ports:
       - "4000:4000"
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=yourpassword
-      - POSTGRES_DB=orders
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=ecommerce
       - KAFKA_BROKER=kafka:9092
     depends_on:
       - postgres
       - kafka
+
+volumes:
+  postgres_data:
